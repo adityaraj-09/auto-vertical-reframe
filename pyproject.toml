@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verthor"
+version = "0.1.0"
+description = "Scene-aware vertical auto-reframe CLI for video sources."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "lap>=0.5.12",
+  "mediapipe==0.10.14",
+  "numpy>=1.26",
+  "opencv-python>=4.10.0.84",
+  "scenedetect>=0.6.4",
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "ultralytics>=8.3.0",
+]
+
+[project.scripts]
+verthor = "verthor.auto_reframe:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
