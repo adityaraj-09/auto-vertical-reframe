@@ -1,4 +1,4 @@
-# Verthor
+# Auto Vertical Reframe
 
 Scene-aware vertical auto-reframe CLI that turns horizontal footage into 9:16 video without losing the subject.
 
@@ -16,19 +16,17 @@ Scene-aware vertical auto-reframe CLI that turns horizontal footage into 9:16 vi
 
 ## Demo
 
-| Source (16:9) | Verthor output (9:16) |
+| Source (16:9) | Auto Vertical Reframe output (9:16) |
 | :---: | :---: |
-| <img src="assets/demo_source.gif" alt="Source clip" width="320"> | <img src="assets/demo_vertical.gif" alt="Verthor output" width="180"> |
+| <img src="assets/demo_source.gif" alt="Source clip" width="320"> | <img src="assets/demo_vertical.gif" alt="Auto Vertical Reframe output" width="180"> |
 
 Full-quality files: [assets/demo_source.mp4](assets/demo_source.mp4), [assets/demo_vertical.mp4](assets/demo_vertical.mp4).
 
 ## Overview
 
-Vertical platforms (Reels, Shorts, TikTok) demand 9:16 video, but most source material is shot horizontally. Verthor reads a video, detects subjects per scene, ranks candidate subjects using model signals, and drives a virtual camera (pan + zoom) through a smoothed path optimizer. It emits a ready-to-publish MP4 via ffmpeg.
+Vertical platforms (Reels, Shorts, TikTok) demand 9:16 video, but most source material is shot horizontally. Auto Vertical Reframe reads a video, detects subjects per scene, ranks candidate subjects using model signals, and drives a virtual camera (pan + zoom) through a smoothed path optimizer. It emits a ready-to-publish MP4 via ffmpeg.
 
-## Motivation
-
-Naive center-cropping loses the subject the moment they move. Manual reframing is tedious for long footage. Verthor combines segmentation, face/pose cues, saliency, tracking continuity, and scene detection so each shot gets its own framing decision without relying on a static center crop.
+Naive center-cropping loses the subject the moment they move. Manual reframing is tedious for long footage. Auto Vertical Reframe combines segmentation, face/pose cues, saliency, tracking continuity, and scene detection so each shot gets its own framing decision without relying on a static center crop.
 
 ## Features
 
@@ -96,7 +94,7 @@ pip install -e .
 verthor input.mp4 output_vertical.mp4 --preset talking_head
 ```
 
-By default Verthor uses the fast `handcrafted` saliency backend.
+By default Auto Vertical Reframe uses the fast `handcrafted` saliency backend.
 
 On macOS you can instead double-click `run_verthor.command` — it provisions the venv and prompts for input, preset, debug preview, and saliency mode via native dialogs. If a non-video file is accidentally passed to the launcher, it opens the file picker again instead of trying to process it.
 
@@ -142,6 +140,10 @@ verthor/
 
 Beta. API and CLI flags may change between versions.
 
+## Releases
+
+- [0.1.0](CHANGELOG.md#010---2026-04-19) - initial beta release.
+
 ## Testing
 
 Testing is planned for future releases.
@@ -154,4 +156,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 MIT — see [LICENSE](LICENSE)
 
-KazKozDev — [kazkozdev@gmail.com](mailto:kazkozdev@gmail.com)
+KazKozDev — [kazkozdev@gmail.com](mailto:kazkozdev@gmail.com) — [LinkedIn](https://www.linkedin.com/in/kazkozdev)
