@@ -120,6 +120,12 @@ Sports footage with wider framing and debug preview:
 verthor match.mp4 match_vertical.mp4 --preset sports --save-debug-preview
 ```
 
+Process only part of a long source (30 seconds from the start, or a window):
+```bash
+verthor clip.mp4 clip_vertical.mp4 --preset movie --duration 30
+verthor clip.mp4 clip_vertical.mp4 --preset movie --start 45 --duration 30
+```
+
 See `verthor --help` for the full flag list (saliency backend/device, motion damping, zoom bounds, ffmpeg encoder, etc.).
 
 ## Project Structure

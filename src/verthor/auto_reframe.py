@@ -586,6 +586,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("input")
     parser.add_argument("output")
+    parser.add_argument(
+        "--start",
+        type=float,
+        default=0.0,
+        help="Start time in seconds (skip this much of the source).",
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Only reframe this many seconds (from --start, or from 0).",
+    )
 
     parser.add_argument("--seg-model", default="yolo11n-seg.pt")
     parser.add_argument("--tracker", default="bytetrack.yaml")
@@ -2548,6 +2560,8 @@ def render_locked_frames(
             )
         stats["frames_processed"] += 1
         frame_idx += 1
+        if total_frames > 0 and frame_idx >= total_frames:
+            break
         if frame_idx % 50 == 0:
             logging.info(
                 "Rendered %s/%s | locked shot=%s | cut=%s",
@@ -2880,6 +2894,36 @@ def build_video_filters(
     return ",".join(filters)
 
 
+def extract_source_clip(
+    input_path: Path,
+    output_path: Path,
+    start: float,
+    duration: Optional[float],
+) -> None:
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg not found in PATH")
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+    if start > 0:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += ["-i", str(input_path)]
+    if duration is not None:
+        cmd += ["-t", f"{duration:.3f}"]
+    cmd += ["-c", "copy", "-avoid_negative_ts", "make_zero", str(output_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode == 0 and output_path.is_file() and output_path.stat().st_size > 0:
+        return
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+    if start > 0:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += ["-i", str(input_path)]
+    if duration is not None:
+        cmd += ["-t", f"{duration:.3f}"]
+    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-c:a", "aac", str(output_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr or "Failed to extract source clip")
+
+
 def run_ffmpeg_mux(
     silent_video_path: str,
     source_input_path: str,
@@ -2982,6 +3026,10 @@ def reset_for_new_scene(
 def process_video(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_path = Path(args.output)
+    start = max(0.0, float(args.start or 0.0))
+    duration = args.duration
+    if duration is not None and duration <= 0:
+        raise ValueError("--duration must be greater than 0")
 
     cap = cv2.VideoCapture(str(input_path))
     if not cap.isOpened():
@@ -2993,6 +3041,13 @@ def process_video(args: argparse.Namespace) -> None:
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
+    max_process_frames = None
+    if duration is not None and start <= 0:
+        max_process_frames = max(1, int(round(duration * fps)))
+        if total_frames > 0:
+            max_process_frames = min(max_process_frames, total_frames)
+        total_frames = max_process_frames
+
     base_crop_w, base_crop_h = compute_base_crop(frame_w, frame_h, 9, 16)
     allowed_class_ids = [
         CLASS_IDS[name] for name in args.classes if name in CLASS_IDS
@@ -3001,10 +3056,6 @@ def process_video(args: argparse.Namespace) -> None:
         raise ValueError("No valid classes selected")
 
     speaker_segments = load_speaker_segments(args.speaker_json)
-    scene_start_frames = detect_scenes(
-        str(input_path), args.scene_threshold, args.min_scene_len
-    )
-    scene_start_set = set(scene_start_frames)
 
     yolo_device = 0 if torch is not None and torch.cuda.is_available() else (
         "mps"
@@ -3034,6 +3085,42 @@ def process_video(args: argparse.Namespace) -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
+        source_path = input_path
+        if start > 0 or duration is not None:
+            source_path = tmpdir_path / "source_clip.mp4"
+            logging.info(
+                "Clipping source start=%.2fs duration=%s",
+                start,
+                f"{duration:.2f}s" if duration is not None else "end",
+            )
+            extract_source_clip(input_path, source_path, start, duration)
+            cap = cv2.VideoCapture(str(source_path))
+            if not cap.isOpened():
+                raise RuntimeError(f"Could not open clipped video: {source_path}")
+            fps = cap.get(cv2.CAP_PROP_FPS) or fps
+            frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or frame_w
+            frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or frame_h
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            base_crop_w, base_crop_h = compute_base_crop(frame_w, frame_h, 9, 16)
+            if duration is not None:
+                max_process_frames = max(1, int(round(duration * fps)))
+                if total_frames > 0:
+                    max_process_frames = min(max_process_frames, total_frames)
+                total_frames = max_process_frames
+        if duration is not None:
+            logging.info(
+                "Processing %.2fs (%s frames) from %.2fs",
+                duration,
+                total_frames,
+                start,
+            )
+
+        scene_start_frames = detect_scenes(
+            str(source_path), args.scene_threshold, args.min_scene_len
+        )
+        scene_start_set = set(scene_start_frames)
+
         silent_video_path = tmpdir_path / "silent_vertical.mp4"
         debug_video_path = tmpdir_path / "debug_vertical.mp4"
 
@@ -3091,7 +3178,7 @@ def process_video(args: argparse.Namespace) -> None:
             args.analyze_stride if args.camera_mode == "locked" else 1
         )
         results = model.track(
-            source=str(input_path),
+            source=str(source_path),
             stream=True,
             persist=True,
             tracker=args.tracker,
@@ -3109,6 +3196,8 @@ def process_video(args: argparse.Namespace) -> None:
             if frame is None:
                 continue
             frame_idx = 1 + (result_idx - 1) * analyze_stride
+            if max_process_frames is not None and frame_idx > max_process_frames:
+                break
 
             if frame_idx in scene_start_set or (
                 analyze_stride > 1
@@ -3458,7 +3547,7 @@ def process_video(args: argparse.Namespace) -> None:
                 len(planned),
             )
             render_locked_frames(
-                input_path,
+                source_path,
                 planned,
                 writer,
                 debug_writer,
@@ -3481,7 +3570,7 @@ def process_video(args: argparse.Namespace) -> None:
 
         run_ffmpeg_mux(
             silent_video_path=str(silent_video_path),
-            source_input_path=str(input_path),
+            source_input_path=str(source_path),
             final_output_path=str(output_path),
             video_encoder=args.video_encoder,
             audio_bitrate=args.audio_bitrate,
@@ -3493,7 +3582,7 @@ def process_video(args: argparse.Namespace) -> None:
         if debug_writer is not None and final_debug_path is not None:
             run_ffmpeg_mux(
                 silent_video_path=str(debug_video_path),
-                source_input_path=str(input_path),
+                source_input_path=str(source_path),
                 final_output_path=str(final_debug_path),
                 video_encoder=args.video_encoder,
                 audio_bitrate=args.audio_bitrate,
